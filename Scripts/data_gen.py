@@ -1,125 +1,98 @@
-"""
-Synthetic medical‑charge data generator (re‑usable template)
-────────────────────────────────────────────────────────────
-• Only uses Python ≥3.8 std‑lib + pandas + json
-• All project‑specific choices live in the CFG dict — edit that block only.
-
-Generated files (under ./data):
-  │─ provider_locations.csv
-  │─ charges.csv
-  └─ kpi.json (average charge KPI)
-"""
-
-# ── imports ────────────────────────────────────────────────
-import json, os, random
-from datetime import date, timedelta
+# ─────────────────────────── scripts/generate_data.py ───────────────────────────
+#!/usr/bin/env python3
+import json, random
 from pathlib import Path
+from datetime import datetime, timedelta
 import pandas as pd
 
-# ── PROJECT CONFIG ─────────────────────────────────────────
-CFG = {
-    "state"      : "Alabama",
-    "seed"       : 42,
-
-    # folders will be created relative to this script’s parent dir
-    "data_dir"   : "data",         # subfolder name only
-
-    # timeline
-    "year_start" : 2023,            # first year (Jan‑1 start)
-    "n_months"   : 12,              # number of monthly periods
-
-    # geography (city, latitude, longitude)
-    "cities"     : [
-        ("Birmingham",  33.5207, -86.8025),
-        ("Montgomery",  32.3792, -86.3077),
-        ("Mobile",      30.6954, -88.0399),
-        ("Huntsville",  34.7304, -86.5861),
-        ("Tuscaloosa",  33.2098, -87.5692),
-        ("Dothan",      31.2232, -85.3905),
-        ("Auburn",      32.6099, -85.4808),
-        ("Decatur",     34.6059, -86.9833),
-        ("Gadsden",     34.0143, -86.0066),
-        ("Florence",    34.7998, -87.6773)
-    ],
-
-    # healthcare business dimensions
-    "payers"     : ["Medicare", "Medicaid", "Private", "Self-Pay"],
-
-    "proc_cats"  : {
-        "Cardiology"     : ["Stent", "CABG", "Angiogram"],
-        "Orthopedics"    : ["Knee Replacement", "Hip Replacement", "Arthroscopy"],
-        "Oncology"       : ["Chemo Session", "Radiation", "Immunotherapy"],
-        "Diagnostic"     : ["MRI", "CT Scan", "Ultrasound"],
-        "General Surgery": ["Appendectomy", "Cholecystectomy", "Hernia Repair"],
-    },
+CFG = {             # trimmed for brevity – unchanged logic
+    "seed": 42, "n_rides": 25_000, "n_drivers": 1_000,
+    "start_date": datetime(2025, 1, 1), "end_date": datetime(2025, 6, 30),
+    "products": ["UberX", "UberXL", "Comfort", "Black", "Green"],
+    "surge_prob": 0.30,
+    "bbox": {"lat_min": 40.55, "lat_max": 40.92, "lon_min": -74.15, "lon_max": -73.70}
 }
-
-# ── derived constants ─────────────────────────────────────
 random.seed(CFG["seed"])
-BASE_DIR   = Path(__file__).resolve().parents[1]   # project root
-DATA_DIR   = BASE_DIR / CFG["data_dir"]
-DATA_DIR.mkdir(exist_ok=True)
 
-CITIES       = CFG["cities"]
-PAYERS       = CFG["payers"]
-PROC_CATS    = list(CFG["proc_cats"].keys())
-SUB_BY_CAT   = CFG["proc_cats"]
+ROOT      = Path(__file__).resolve().parents[1]
+DATA_DIR  = ROOT / "data";  DATA_DIR.mkdir(exist_ok=True)
 
-START_DATE   = date(CFG["year_start"], 1, 1)
-MONTHS       = [START_DATE + timedelta(days=30 * i) for i in range(CFG["n_months"])]
-
-# ── provider location table ───────────────────────────────
-providers = []
-prov_id = 1
-for city, lat, lon in CITIES:
-    for _ in range(random.randint(3, 4)):
-        providers.append({
-            "provider_id"  : prov_id,
-            "provider_name": f"{city[:3].upper()}-Med {prov_id}",
-            "city"         : city,
-            "lat"          : round(lat + random.uniform(-0.12, 0.12), 4),
-            "lon"          : round(lon + random.uniform(-0.12, 0.12), 4),
-        })
-        prov_id += 1
-prov_df = pd.DataFrame(providers)
-prov_df.to_csv(DATA_DIR / "provider_locations.csv", index=False)
-
-# ── transactional charge rows ─────────────────────────────
-records = []
-for month in MONTHS:
-    month_str = month.strftime("%Y-%m")
-    for p in providers:
-        sampled_cats = random.sample(PROC_CATS, k=random.randint(3, 5))
-        for cat in sampled_cats:
-            sub_proc = random.choice(SUB_BY_CAT[cat])
-            for _ in range(random.randint(8, 15)):
-                payer = random.choices(PAYERS, weights=[0.35, 0.25, 0.30, 0.10])[0]
-
-                base = random.uniform(2_000, 25_000)
-                if cat == "Oncology":
-                    base *= 1.8          # oncology premium
-                if payer == "Private":
-                    base *= 1.15         # commercial up‑charge
-                charge = round(base, 2)
-
-                records.append([
-                    p["provider_id"], p["provider_name"], p["city"], p["lat"], p["lon"],
-                    payer, cat, sub_proc,
-                    month_str, charge
-                ])
-
-cols = [
-    "provider_id", "provider_name", "city", "lat", "lon",
-    "payer_type", "procedure_category", "procedure_sub",
-    "month", "charge_amount",
+# driver_profiles.csv
+drivers = [
+    {"driver_id": i, "name": f"DRV-{i:04}",
+     "rating": round(random.uniform(4.6, 5.0), 2),
+     "onboard_dt": (datetime(2018, 1, 1) + timedelta(days=random.randint(0, 2555))).date()}
+    for i in range(1, CFG["n_drivers"] + 1)
 ]
-charges_df = pd.DataFrame(records, columns=cols)
-charges_df.to_csv(DATA_DIR / "charges.csv", index=False)
+pd.DataFrame(drivers).to_csv(DATA_DIR / "driver_profiles.csv", index=False)
 
-# ── headline KPI ─────────────────────────────────────────--
-avg_charge = round(charges_df["charge_amount"].mean(), 2)
-with open(DATA_DIR / "kpi.json", "w") as f:
-    json.dump({"average_charge": avg_charge, "state": CFG["state"]}, f)
+# rides.csv
+def pick_coord():
+    lat = random.uniform(CFG["bbox"]["lat_min"], CFG["bbox"]["lat_max"])
+    lon = random.uniform(CFG["bbox"]["lon_min"], CFG["bbox"]["lon_max"])
+    return lat, lon
 
-print(f"✅  Synthetic data for {CFG['state']} written to {DATA_DIR}\n"  \
-      f"   – provider_locations.csv\n   – charges.csv\n   – kpi.json  (avg charge: ${avg_charge:,.2f})")
+span = (CFG["end_date"] - CFG["start_date"]).total_seconds()
+rides = []
+for r in range(1, CFG["n_rides"] + 1):
+    ts = CFG["start_date"] + timedelta(seconds=random.randint(0, int(span)))
+    d_id = random.randint(1, CFG["n_drivers"])
+    product = random.choice(CFG["products"])
+    p_lat, p_lon = pick_coord()
+    d_lat, d_lon = pick_coord()
+    dist = round(random.uniform(1, 25), 2)
+    base = 2.5 + dist * 1.75
+    surge = random.random() < CFG["surge_prob"]
+    fare = round(base * (1 + (random.uniform(0.5, 2.0) if surge else 0)), 2)
+    rides.append([r, ts.isoformat(), d_id, product,
+                  p_lat, p_lon, d_lat, d_lon, dist, surge, fare])
+
+cols = ["ride_id","timestamp","driver_id","product",
+        "pickup_lat","pickup_lon","drop_lat","drop_lon",
+        "distance_km","is_surge","fare_usd"]
+pd.DataFrame(rides, columns=cols).to_csv(DATA_DIR / "rides.csv", index=False)
+
+# kpi.json
+df = pd.DataFrame(rides, columns=cols)
+kpi = {
+    "total_rides": len(df),
+    "avg_fare_usd": round(df["fare_usd"].mean(), 2),
+    "avg_distance_km": round(df["distance_km"].mean(), 2),
+    "pct_surge": round(100 * df["is_surge"].mean(), 1)
+}
+(DATA_DIR / "kpi.json").write_text(json.dumps(kpi, indent=2))
+print("✅  Data written to", DATA_DIR.relative_to(ROOT))
+
+# ─────────────────────────── scripts/build_dashboard.py ─────────────────────────
+#!/usr/bin/env python3
+import json, sys, time
+from pathlib import Path
+import pandas as pd, plotly.express as px
+
+ROOT      = Path(__file__).resolve().parents[1]
+DATA_DIR  = ROOT / "data"
+OUT_DIR   = ROOT / "outputs"; OUT_DIR.mkdir(exist_ok=True)
+
+rides_fp  = DATA_DIR / "rides.csv"
+dr_fp     = DATA_DIR / "driver_profiles.csv"
+for p in (rides_fp, dr_fp):
+    if not p.exists():
+        sys.exit(f"Missing {p}")
+
+rides = pd.read_csv(rides_fp, parse_dates=["timestamp"])
+kpi   = json.loads((DATA_DIR / "kpi.json").read_text())
+
+# ── Map
+sample = rides.sample(n=min(2000, len(rides)), random_state=1)
+fig_map = px.scatter_mapbox(sample, lat="pickup_lat", lon="pickup_lon",
+                            color="product", size="fare_usd",
+                            zoom=9, height=550,
+                            hover_data={"fare_usd":":.2f","distance_km":True,"is_surge":True})
+fig_map.update_layout(mapbox_style="open-street-map",
+                      title="Sample Pick-ups (size ∝ fare)",
+                      margin=dict(t=40,l=0,r=0,b=0))
+
+# ── Hour×Weekday heat-map
+rides["hour"] = rides["timestamp"].dt.hour
+rides["weekday"] = rides["timestamp"].dt.day_name()
+hm = rides.groupby(["weekday","hour"]).s

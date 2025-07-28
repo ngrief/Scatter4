@@ -1,1 +1,6 @@
-{"average_charge": 16353.14, "state": "Alabama"}
+{
+  "total_rides": 25000,
+  "avg_fare_usd": 34.64,
+  "avg_distance_km": 12.97,
+  "pct_surge": 30.0
+}
